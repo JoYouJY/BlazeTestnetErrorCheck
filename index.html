@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sonic Blaze Testnet Tx Revert Reason</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen">
+
+  <div class="w-full max-w-3xl mx-auto p-6 md:p-8 bg-gray-800 rounded-2xl shadow-2xl border border-gray-700">
+    <div class="text-center mb-8">
+      <h2 class="text-3xl font-bold text-white">Transaction Revert Reason</h2>
+      <p class="text-gray-400 mt-2">Enter a transaction hash to find out why it failed.</p>
+    </div>
+    
+    <!-- Input Section -->
+    <div class="space-y-6">
+      <div>
+        <label for="rpcUrl" class="block text-sm font-medium text-gray-300 mb-2">RPC URL</label>
+        <input id="rpcUrl" type="text" class="w-full bg-gray-700 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" value="https://rpc.blaze.soniclabs.com">
+      </div>
+
+      <div>
+        <label for="txHash" class="block text-sm font-medium text-gray-300 mb-2">Transaction Hash</label>
+        <input id="txHash" type="text" class="w-full bg-gray-700 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" value="0xabe0b1f76ddaa83cb96b714d59bed56ca6e984a92972d3d971eb311211933c55">
+      </div>
+    </div>
+
+    <!-- Button -->
+    <div class="mt-8">
+      <button onclick="checkRevert()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
+        Get Revert Reason
+      </button>
+    </div>
+
+    <!-- Output Section -->
+    <div class="mt-8">
+      <h3 class="text-xl font-semibold text-white mb-4">Output:</h3>
+      <pre id="output" class="bg-gray-900 text-sm text-green-400 p-4 rounded-lg border border-gray-700 overflow-x-auto min-h-[100px] whitespace-pre-wrap break-words"></pre>
+    </div>
+  </div>
+
+  <script>
+    async function checkRevert() {
+      const rpcUrl = document.getElementById("rpcUrl").value;
+      const txHash = document.getElementById("txHash").value;
+      const output = document.getElementById("output");
+      
+      // Reset output style and show loading message
+      output.textContent = "Fetching transaction details...";
+      output.classList.remove('text-red-400', 'text-green-400');
+      output.classList.add('text-yellow-400');
+
+      if (!rpcUrl || !txHash) {
+          output.textContent = "Please provide both an RPC URL and a Transaction Hash.";
+          output.classList.replace('text-yellow-400', 'text-red-400');
+          return;
+      }
+
+      try {
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
+
+        // 1. Get the full transaction object
+        const tx = await provider.getTransaction(txHash);
+        if (!tx) {
+          output.textContent = "Transaction not found. Please check the hash and RPC URL.";
+          output.classList.replace('text-yellow-400', 'text-red-400');
+          return;
+        }
+        
+        output.textContent = "Transaction found. Simulating to get revert reason...";
+
+        // 2. Prepare the call request to simulate the transaction
+        // We need to use the state of the blockchain *before* the transaction was included.
+        const callRequest = {
+          to: tx.to,
+          from: tx.from,
+          data: tx.data,
+          value: tx.value ? tx.value.toString() : "0x0",
+          gasPrice: tx.gasPrice ? tx.gasPrice.toString() : undefined,
+          gasLimit: tx.gasLimit ? tx.gasLimit.toString() : undefined,
+          accessList: tx.accessList
+        };
+
+        // 3. Simulate the transaction using eth_call at the block before it was mined
+        try {
+          // The blockTag tx.blockNumber - 1 is crucial.
+          await provider.call(callRequest, tx.blockNumber - 1);
+          output.textContent = "Transaction did not revert during simulation. This is unexpected for a failed transaction.";
+          output.classList.replace('text-yellow-400', 'text-red-400');
+        } catch (err) {
+          // This catch block is the expected outcome for a reverted transaction.
+          let reason = "Could not determine revert reason.";
+          
+          if (err.data) {
+            // Ethers v6 often packs the revert reason in err.data
+            reason = decodeRevertReason(err.data);
+          } else if (err.reason) {
+            // Fallback for simpler error messages
+            reason = err.reason;
+          }
+          
+          output.textContent = `✅ Success!\n\nDecoded Reason: ${reason}`;
+          output.classList.replace('text-yellow-400', 'text-green-400');
+        }
+
+      } catch (e) {
+        console.error(e);
+        output.textContent = `An error occurred: ${e.message}`;
+        output.classList.replace('text-yellow-400', 'text-red-400');
+      }
+    }
+
+    /**
+     * Decodes the revert reason from the raw error data.
+     * @param {string} data - The hex string from the error object.
+     * @returns {string} - The decoded revert reason string.
+     */
+    function decodeRevertReason(data) {
+      // Standard ABI-encoded error string selector: 0x08c379a0 is Error(string)
+      if (data.startsWith("0x08c379a0")) {
+        try {
+          // Create a simple interface to decode the string
+          const iface = new ethers.Interface(["function Error(string)"]);
+          const decoded = iface.decodeErrorResult("Error", data);
+          return decoded[0]; // The reason string
+        } catch (decodeErr) {
+            console.error("Decoding failed:", decodeErr);
+            return "Could not decode revert reason from data.";
+        }
+      }
+      
+      // Handle custom errors if possible (this is a simplified example)
+      // A more robust solution would involve fetching the contract ABI
+      return `Unknown error format. Raw data: ${data}`;
+    }
+  </script>
+</body>
+</html>
