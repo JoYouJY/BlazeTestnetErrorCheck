@@ -1,146 +1,775 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sonic Blaze Testnet Tx Revert Reason</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
-  <style>
-    body {
-      font-family: 'Inter', sans-serif;
-    }
-  </style>
-</head>
-<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen">
-
-  <div class="w-full max-w-3xl mx-auto p-6 md:p-8 bg-gray-800 rounded-2xl shadow-2xl border border-gray-700">
-    <div class="text-center mb-8">
-      <h2 class="text-3xl font-bold text-white">Transaction Revert Reason</h2>
-      <p class="text-gray-400 mt-2">Enter a transaction hash to find out why it failed.</p>
-    </div>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Blaze Explorer</title>
     
-    <!-- Input Section -->
-    <div class="space-y-6">
-      <div>
-        <label for="rpcUrl" class="block text-sm font-medium text-gray-300 mb-2">RPC URL</label>
-        <input id="rpcUrl" type="text" class="w-full bg-gray-700 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" value="https://rpc.blaze.soniclabs.com">
-      </div>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Load React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Load Babel for JSX support in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Custom Styles -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        /* Smooth scrolling for log lists */
+        .overflow-y-auto { scrollbar-width: thin; }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-      <div>
-        <label for="txHash" class="block text-sm font-medium text-gray-300 mb-2">Transaction Hash</label>
-        <input id="txHash" type="text" class="w-full bg-gray-700 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" value="0xabe0b1f76ddaa83cb96b714d59bed56ca6e984a92972d3d971eb311211933c55">
-      </div>
-    </div>
+    <!-- Application Logic Inline to avoid XHR/CORS issues -->
+    <script type="text/babel">
+        const { useState, useEffect, Component } = React;
 
-    <!-- Button -->
-    <div class="mt-8">
-      <button onclick="checkRevert()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
-        Get Revert Reason
-      </button>
-    </div>
+        // --- Error Boundary ---
+        class ErrorBoundary extends Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null, errorInfo: null };
+            }
 
-    <!-- Output Section -->
-    <div class="mt-8">
-      <h3 class="text-xl font-semibold text-white mb-4">Output:</h3>
-      <pre id="output" class="bg-gray-900 text-sm text-green-400 p-4 rounded-lg border border-gray-700 overflow-x-auto min-h-[100px] whitespace-pre-wrap break-words"></pre>
-    </div>
-  </div>
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
 
-  <script>
-    async function checkRevert() {
-      const rpcUrl = document.getElementById("rpcUrl").value;
-      const txHash = document.getElementById("txHash").value;
-      const output = document.getElementById("output");
-      
-      // Reset output style and show loading message
-      output.textContent = "Fetching transaction details...";
-      output.classList.remove('text-red-400', 'text-green-400');
-      output.classList.add('text-yellow-400');
+            componentDidCatch(error, errorInfo) {
+                console.error("Uncaught error:", error, errorInfo);
+                this.setState({ errorInfo });
+            }
 
-      if (!rpcUrl || !txHash) {
-          output.textContent = "Please provide both an RPC URL and a Transaction Hash.";
-          output.classList.replace('text-yellow-400', 'text-red-400');
-          return;
-      }
-
-      try {
-        const provider = new ethers.JsonRpcProvider(rpcUrl);
-
-        // 1. Get the full transaction object
-        const tx = await provider.getTransaction(txHash);
-        if (!tx) {
-          output.textContent = "Transaction not found. Please check the hash and RPC URL.";
-          output.classList.replace('text-yellow-400', 'text-red-400');
-          return;
-        }
-        
-        output.textContent = "Transaction found. Simulating to get revert reason...";
-
-        // 2. Prepare the call request to simulate the transaction
-        // We need to use the state of the blockchain *before* the transaction was included.
-        const callRequest = {
-          to: tx.to,
-          from: tx.from,
-          data: tx.data,
-          value: tx.value ? tx.value.toString() : "0x0",
-          gasPrice: tx.gasPrice ? tx.gasPrice.toString() : undefined,
-          gasLimit: tx.gasLimit ? tx.gasLimit.toString() : undefined,
-          accessList: tx.accessList
-        };
-
-        // 3. Simulate the transaction using eth_call at the block before it was mined
-        try {
-          // The blockTag tx.blockNumber - 1 is crucial.
-          await provider.call(callRequest, tx.blockNumber - 1);
-          output.textContent = "Transaction did not revert during simulation. This is unexpected for a failed transaction.";
-          output.classList.replace('text-yellow-400', 'text-red-400');
-        } catch (err) {
-          // This catch block is the expected outcome for a reverted transaction.
-          let reason = "Could not determine revert reason.";
-          
-          if (err.data) {
-            // Ethers v6 often packs the revert reason in err.data
-            reason = decodeRevertReason(err.data);
-          } else if (err.reason) {
-            // Fallback for simpler error messages
-            reason = err.reason;
-          }
-          
-          output.textContent = `✅ Success!\n\nDecoded Reason: ${reason}`;
-          output.classList.replace('text-yellow-400', 'text-green-400');
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-8 bg-red-50 text-red-900 min-h-screen font-sans">
+                            <h1 className="text-2xl font-bold mb-4">Something went wrong</h1>
+                            <div className="bg-white p-6 rounded-lg shadow border border-red-200">
+                                <p className="font-semibold text-red-600 mb-2">{this.state.error?.toString()}</p>
+                                <details className="text-xs font-mono text-slate-500 whitespace-pre-wrap">
+                                    {this.state.errorInfo?.componentStack}
+                                </details>
+                            </div>
+                            <button 
+                                onClick={() => window.location.reload()} 
+                                className="mt-6 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                            >
+                                Reload Page
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
         }
 
-      } catch (e) {
-        console.error(e);
-        output.textContent = `An error occurred: ${e.message}`;
-        output.classList.replace('text-yellow-400', 'text-red-400');
-      }
-    }
+        // --- Inline Icons ---
+        const IconSearch = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        );
+        const IconArrowLeft = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        );
+        const IconClock = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        );
+        const IconFileText = ({ size = 24, className }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        );
+        const IconCheck = ({ size = 24, className }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        );
+        const IconX = ({ size = 24, className }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        );
+        const IconCopy = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        );
+        const IconBox = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        );
+        const IconWallet = ({ size = 24, className }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H4z"/></svg>
+        );
+        const IconActivity = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        );
+        const IconRefreshCw = ({ size = 24, className }) => (
+            <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        );
 
-    /**
-     * Decodes the revert reason from the raw error data.
-     * @param {string} data - The hex string from the error object.
-     * @returns {string} - The decoded revert reason string.
-     */
-    function decodeRevertReason(data) {
-      // Standard ABI-encoded error string selector: 0x08c379a0 is Error(string)
-      if (data.startsWith("0x08c379a0")) {
-        try {
-          // Create a simple interface to decode the string
-          const iface = new ethers.Interface(["function Error(string)"]);
-          const decoded = iface.decodeErrorResult("Error", data);
-          return decoded[0]; // The reason string
-        } catch (decodeErr) {
-            console.error("Decoding failed:", decodeErr);
-            return "Could not decode revert reason from data.";
+        // --- Config ---
+        const RPC_URL = "https://rpc.blaze.soniclabs.com";
+        const CHAIN_ID = 57054;
+        const CURRENCY_SYMBOL = "S"; 
+
+        // --- Main Component ---
+        function SonicExplorer() {
+            const [searchInput, setSearchInput] = useState('');
+            const [view, setView] = useState('home'); 
+            const [txTab, setTxTab] = useState('overview'); 
+            
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [txData, setTxData] = useState(null);
+            const [receiptData, setReceiptData] = useState(null);
+            const [blockData, setBlockData] = useState(null);
+            
+            const [addressData, setAddressData] = useState(null); 
+            const [addressTxs, setAddressTxs] = useState([]);
+            const [scanning, setScanning] = useState(false);
+            const [scanProgress, setScanProgress] = useState(null); 
+            const [oldestScannedBlock, setOldestScannedBlock] = useState(0);
+            const [latestBlockNum, setLatestBlockNum] = useState(0);
+
+            const [dateStart, setDateStart] = useState('');
+            const [dateEnd, setDateEnd] = useState('');
+            const [isLocating, setIsLocating] = useState(false);
+
+            const [blockStartInput, setBlockStartInput] = useState('');
+            const [blockEndInput, setBlockEndInput] = useState('');
+
+            const [modalConfig, setModalConfig] = useState(null); 
+            const [isCopied, setIsCopied] = useState('');
+
+            // --- RPC Helper (Single) ---
+            const rpcCall = async (method, params) => {
+                try {
+                    const response = await fetch(RPC_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jsonrpc: '2.0',
+                            id: 1,
+                            method: method,
+                            params: params
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error.message);
+                    return data.result;
+                } catch(err) {
+                    throw err;
+                }
+            };
+
+            // --- RPC Helper (Batch) ---
+            const rpcBatchCall = async (calls) => {
+                const payload = calls.map((call, index) => ({
+                    jsonrpc: '2.0',
+                    id: index,
+                    method: call.method,
+                    params: call.params
+                }));
+
+                try {
+                    const response = await fetch(RPC_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    
+                    if (!Array.isArray(data)) {
+                        console.error("RPC Batch Error", data);
+                        return [];
+                    }
+                    return data.sort((a, b) => a.id - b.id).map(d => d.result);
+                } catch(err) {
+                    console.error(err);
+                    return [];
+                }
+            };
+
+            const handleSearch = async (e) => {
+                if (e) e.preventDefault();
+                if (!searchInput) return;
+
+                const input = searchInput.trim();
+                setError(null);
+                setLoading(true);
+
+                try {
+                    if (input.length === 66 && input.startsWith('0x')) {
+                        await fetchTransaction(input);
+                    } else if (input.length === 42 && input.startsWith('0x')) {
+                        await fetchAddress(input);
+                    } else {
+                        setError("Invalid input. Please enter a valid Tx Hash (66 chars) or Address (42 chars).");
+                        setLoading(false);
+                    }
+                } catch (err) {
+                    setError(err.message || "An error occurred");
+                    setLoading(false);
+                }
+            };
+
+            const fetchTransaction = async (hash) => {
+                setView('transaction');
+                setTxTab('overview');
+                setLoading(true);
+                setTxData(null);
+                setReceiptData(null);
+                setBlockData(null);
+
+                try {
+                    const tx = await rpcCall('eth_getTransactionByHash', [hash]);
+                    if (!tx) throw new Error('Transaction not found.');
+                    setTxData(tx);
+
+                    const receipt = await rpcCall('eth_getTransactionReceipt', [hash]);
+                    setReceiptData(receipt);
+
+                    if (tx.blockNumber) {
+                        const block = await rpcCall('eth_getBlockByNumber', [tx.blockNumber, false]);
+                        setBlockData(block);
+                    }
+                } catch (err) {
+                    setError(err.message || "Error fetching transaction.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const fetchAddress = async (address) => {
+                setView('address');
+                setLoading(true);
+                setAddressData(null);
+                setAddressTxs([]);
+                setScanning(true);
+                setScanProgress(null);
+                setLatestBlockNum(0);
+                setBlockStartInput('');
+                setBlockEndInput('');
+                setDateStart('');
+                setDateEnd('');
+
+                try {
+                    const [balanceHex, countHex, latestBlockHex] = await rpcBatchCall([
+                        { method: 'eth_getBalance', params: [address, 'latest'] },
+                        { method: 'eth_getTransactionCount', params: [address, 'latest'] },
+                        { method: 'eth_blockNumber', params: [] }
+                    ]);
+                    
+                    setAddressData({
+                        address: address,
+                        balance: balanceHex,
+                        count: countHex
+                    });
+
+                    const latestBlock = parseInt(latestBlockHex, 16);
+                    setLatestBlockNum(latestBlock);
+                    
+                    await scanBlocks(latestBlock, 100, address);
+
+                } catch (err) {
+                    setError(err.message || "Error fetching address data.");
+                    setScanning(false);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const findBlockByTimestamp = async (targetTimestamp) => {
+                let start = 0;
+                let end = latestBlockNum;
+                let resultBlock = latestBlockNum;
+
+                while (start <= end) {
+                    const mid = Math.floor((start + end) / 2);
+                    const block = await rpcCall('eth_getBlockByNumber', [`0x${mid.toString(16)}`, false]);
+                    const ts = parseInt(block.timestamp, 16);
+
+                    if (ts >= targetTimestamp) {
+                        resultBlock = mid;
+                        end = mid - 1;
+                    } else {
+                        start = mid + 1;
+                    }
+                }
+                return resultBlock;
+            };
+
+            const handleDateScan = async (e) => {
+                e.preventDefault();
+                if (!dateStart || !dateEnd || !addressData) return;
+                
+                setIsLocating(true);
+                setScanning(true);
+                setError(null);
+
+                try {
+                    const startTs = Math.floor(new Date(dateStart).getTime() / 1000);
+                    const endTs = Math.floor(new Date(dateEnd).getTime() / 1000);
+
+                    if (startTs > endTs) throw new Error("Start date must be before end date.");
+
+                    setScanProgress("Locating start block...");
+                    const startBlockNum = await findBlockByTimestamp(startTs);
+                    
+                    setScanProgress("Locating end block...");
+                    const endBlockNum = await findBlockByTimestamp(endTs);
+                    
+                    const blockCount = endBlockNum - startBlockNum;
+
+                    if (blockCount <= 0) throw new Error("No blocks found in this time range.");
+                    
+                    const performScan = async () => {
+                        setIsLocating(false);
+                        setModalConfig(null);
+                        await scanBlocks(endBlockNum, blockCount, addressData.address);
+                    };
+
+                    if (blockCount > 2000) {
+                        setModalConfig({
+                            message: `This date range covers ${blockCount} blocks. Scanning more than 2,000 blocks may take some time.`,
+                            onConfirm: performScan,
+                            onCancel: () => {
+                                setIsLocating(false);
+                                setScanning(false);
+                                setScanProgress(null);
+                                setModalConfig(null);
+                            }
+                        });
+                    } else {
+                        await performScan();
+                    }
+
+                } catch (err) {
+                    setError(err.message || "Date scan failed");
+                    setIsLocating(false);
+                    setScanning(false);
+                }
+            };
+
+            const handleBlockScan = async (e) => {
+                e.preventDefault();
+                if (!blockStartInput || !blockEndInput || !addressData) return;
+
+                const start = parseInt(blockStartInput);
+                const end = parseInt(blockEndInput);
+
+                if (isNaN(start) || isNaN(end)) {
+                    setError("Please enter valid block numbers.");
+                    return;
+                }
+                if (start > end) {
+                    setError("Start block must be less than or equal to End block.");
+                    return;
+                }
+
+                const count = end - start + 1;
+                const performScan = async () => {
+                    setModalConfig(null);
+                    await scanBlocks(end, count, addressData.address);
+                };
+
+                if (count > 2000) {
+                        setModalConfig({
+                        message: `You are requesting to scan ${count} blocks. This exceeds the recommended 2,000 block limit.`,
+                        onConfirm: performScan,
+                        onCancel: () => {
+                            setModalConfig(null);
+                            setScanning(false);
+                        }
+                    });
+                } else {
+                    await performScan();
+                }
+            };
+
+            const scanBlocks = async (startBlock, count, address) => {
+                setScanning(true);
+                const BATCH_SIZE = 50; 
+                const addrLower = address.toLowerCase();
+                let foundTxs = [];
+                
+                try {
+                    for (let i = 0; i < count; i += BATCH_SIZE) {
+                        const currentBatchSize = Math.min(BATCH_SIZE, count - i);
+                        const batchCalls = [];
+                        
+                        for (let j = 0; j < currentBatchSize; j++) {
+                            const blockNum = startBlock - (i + j);
+                            if (blockNum < 0) break;
+                            batchCalls.push({ 
+                                method: 'eth_getBlockByNumber', 
+                                params: [`0x${blockNum.toString(16)}`, true] 
+                            });
+                        }
+                        
+                        if (batchCalls.length === 0) break;
+
+                        setScanProgress(`${i} / ${count} blocks scanned`);
+                        const blocks = await rpcBatchCall(batchCalls);
+                        
+                        blocks.forEach(block => {
+                            if (block && block.transactions) {
+                                block.transactions.forEach(tx => {
+                                    if (
+                                        (tx.from && tx.from.toLowerCase() === addrLower) || 
+                                        (tx.to && tx.to.toLowerCase() === addrLower)
+                                    ) {
+                                        foundTxs.push({ ...tx, timestamp: block.timestamp });
+                                    }
+                                });
+                            }
+                        });
+
+                        await new Promise(r => setTimeout(r, 10));
+                    }
+
+                    setAddressTxs(prev => {
+                        const combined = [...prev, ...foundTxs];
+                        const unique = Array.from(new Map(combined.map(item => [item.hash, item])).values());
+                        return unique.sort((a, b) => parseInt(b.blockNumber, 16) - parseInt(a.blockNumber, 16));
+                    });
+
+                    setOldestScannedBlock(startBlock - count);
+                } catch (err) {
+                    console.error("Scan error:", err);
+                } finally {
+                    setScanning(false);
+                    setScanProgress(null);
+                }
+            };
+
+            const handleScanMore = () => {
+                if (!addressData || oldestScannedBlock <= 0) return;
+                scanBlocks(oldestScannedBlock, 1000, addressData.address);
+            };
+
+            // --- Utilities (Robust) ---
+            const formatWei = (hexWei) => {
+                if (!hexWei) return '0';
+                if (typeof BigInt === 'undefined') return '0';
+                try {
+                    const bigIntWei = BigInt(hexWei);
+                    const divisor = BigInt("1000000000000000000");
+                    const integerPart = bigIntWei / divisor;
+                    const remainder = bigIntWei % divisor;
+                    let decimalPart = remainder.toString().padStart(18, '0');
+                    decimalPart = decimalPart.replace(/0+$/, '');
+                    if (decimalPart === '') return integerPart.toString();
+                    return `${integerPart}.${decimalPart.slice(0, 4)}`;
+                } catch (e) { return '0'; }
+            };
+
+            const formatGasPrice = (hexWei) => {
+                if (!hexWei) return '0';
+                if (typeof BigInt === 'undefined') return '0';
+                try {
+                    const bigIntWei = BigInt(hexWei);
+                    const gweiDivisor = BigInt("1000000000");
+                    const gwei = bigIntWei / gweiDivisor;
+                    return gwei.toString();
+                } catch(e) { return '0'; }
+            };
+
+            const hexToInt = (hex) => hex ? parseInt(hex, 16) : 0;
+
+            const copyToClipboard = (text, label) => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    setIsCopied(label);
+                    setTimeout(() => setIsCopied(''), 2000);
+                } catch (err) { }
+                document.body.removeChild(textArea);
+            };
+
+            const calculateFee = (gasUsedHex, gasPriceHex) => {
+                if (!gasUsedHex || !gasPriceHex) return '0';
+                if (typeof BigInt === 'undefined') return '0';
+                try {
+                    const used = BigInt(gasUsedHex);
+                    const price = BigInt(gasPriceHex);
+                    const feeWei = used * price;
+                    const divisor = BigInt("1000000000000000000");
+                    const integerPart = feeWei / divisor;
+                    const remainder = feeWei % divisor;
+                    let decimalPart = remainder.toString().padStart(18, '0').slice(0, 8);
+                    return `${integerPart}.${decimalPart}`;
+                } catch(e) { return '0'; }
+            };
+
+            const timeAgo = (timestampHex) => {
+                if (!timestampHex) return '';
+                try {
+                    const timestamp = parseInt(timestampHex, 16) * 1000;
+                    const now = Date.now();
+                    const diff = now - timestamp;
+                    const seconds = Math.floor(diff / 1000);
+                    const minutes = Math.floor(seconds / 60);
+                    if (minutes > 60) return `${Math.floor(minutes/60)} hrs ago`;
+                    if (minutes > 0) return `${minutes} mins ago`;
+                    return `${seconds} secs ago`;
+                } catch { return ''; }
+            };
+
+            const formatLocalTime = (timestampHex) => {
+                if (!timestampHex) return 'Loading...';
+                try {
+                    return new Date(parseInt(timestampHex, 16) * 1000).toLocaleString();
+                } catch { return ''; }
+            };
+
+            const goToTx = (hash) => {
+                setSearchInput(hash);
+                fetchTransaction(hash);
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8">
+                    {/* Navbar */}
+                    <div className="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row items-center justify-between">
+                        <div className="flex items-center gap-3 mb-4 md:mb-0 cursor-pointer" onClick={() => { setView('home'); setSearchInput(''); }}>
+                            <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                                S
+                            </div>
+                            <h1 className="text-2xl font-bold text-slate-800">SonicScan <span className="text-xs bg-slate-200 text-slate-600 px-2 py-1 rounded-full font-normal ml-2">Blaze</span></h1>
+                        </div>
+                        
+                        {view !== 'home' && (
+                        <form onSubmit={handleSearch} className="relative w-full md:w-96">
+                            <input 
+                                type="text" 
+                                placeholder="Search by Tx Hash / Address" 
+                                className="w-full pl-4 pr-10 py-2 rounded-full border border-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm font-mono shadow-sm"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                            />
+                            <button type="submit" className="absolute right-3 top-2 text-indigo-600"><IconSearch size={16} /></button>
+                        </form>
+                        )}
+                    </div>
+
+                    {view === 'home' && (
+                        <div className="flex flex-col items-center justify-center pt-20">
+                        <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-bold text-4xl shadow-2xl mb-8 transform rotate-3">S</div>
+                        <h2 className="text-3xl md:text-5xl font-bold text-slate-800 mb-4 text-center">Sonic Blaze Explorer</h2>
+                        <p className="text-slate-500 mb-12 text-center max-w-lg">Explore blocks, transactions, and wallet activity on the high-performance Sonic Blaze Testnet.</p>
+                        
+                        <div className="w-full max-w-2xl px-4">
+                            <form onSubmit={handleSearch} className="relative group">
+                                <input 
+                                    type="text" 
+                                    placeholder="Search by Tx Hash (0x...) or Address (0x...)" 
+                                    className="relative w-full pl-6 pr-14 py-5 rounded-lg border-none outline-none focus:ring-2 focus:ring-indigo-400 text-slate-700 font-mono shadow-xl text-lg"
+                                    value={searchInput}
+                                    onChange={(e) => setSearchInput(e.target.value)}
+                                />
+                                <button 
+                                    type="submit"
+                                    disabled={loading}
+                                    className="absolute right-3 top-3 bottom-3 bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-md transition-all flex items-center justify-center font-medium shadow-md"
+                                >
+                                    {loading ? <IconRefreshCw size={20} className="animate-spin" /> : <IconSearch size={20} />}
+                                </button>
+                            </form>
+                            {error && <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-lg border border-red-100 flex items-center gap-3"><IconX size={20} /> {error}</div>}
+                        </div>
+
+                        <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 text-center w-full max-w-4xl px-4">
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                                <div className="text-indigo-600 mb-2 flex justify-center"><IconActivity /></div>
+                                <h3 className="font-bold text-slate-700">Fast Finality</h3>
+                                <p className="text-sm text-slate-500 mt-1">Experience sub-second confirmation times.</p>
+                            </div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                                <div className="text-indigo-600 mb-2 flex justify-center"><IconBox /></div>
+                                <h3 className="font-bold text-slate-700">Real-time Data</h3>
+                                <p className="text-sm text-slate-500 mt-1">Direct RPC connection for latest blocks.</p>
+                            </div>
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+                                <div className="text-indigo-600 mb-2 flex justify-center"><IconWallet /></div>
+                                <h3 className="font-bold text-slate-700">Wallet Insights</h3>
+                                <p className="text-sm text-slate-500 mt-1">View balances and recent activity.</p>
+                            </div>
+                        </div>
+                        </div>
+                    )}
+
+                    {view === 'address' && (
+                        <div className="max-w-7xl mx-auto">
+                        <button onClick={() => setView('home')} className="mb-6 flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors"><IconArrowLeft size={16} /> Back to Home</button>
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 md:p-8 mb-6 relative overflow-hidden">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h2 className="text-sm uppercase tracking-wider text-slate-500 font-semibold mb-2">Address</h2>
+                                    <div className="flex items-center gap-3 mb-6 flex-wrap">
+                                        <span className="text-xl md:text-2xl font-mono text-slate-800 break-all">{addressData?.address}</span>
+                                        <button onClick={() => copyToClipboard(addressData?.address, 'addr-main')} className="text-slate-400 hover:text-indigo-600 bg-slate-100 p-2 rounded-lg"><IconCopy size={16} /></button>
+                                        {isCopied === 'addr-main' && <span className="text-xs text-green-600 font-medium">Copied!</span>}
+                                    </div>
+                                </div>
+                                <div className="hidden md:block text-right">
+                                    <div className="text-xs text-slate-400 uppercase font-semibold mb-1">Current Block</div>
+                                    <div className="text-xl font-mono text-indigo-600 font-bold">#{latestBlockNum.toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-6">
+                            <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-100">
+                                <div className="text-indigo-800 text-sm font-medium mb-1">Balance</div>
+                                <div className="text-2xl font-bold text-indigo-900">{formatWei(addressData?.balance)} {CURRENCY_SYMBOL}</div>
+                            </div>
+                            <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
+                                <div className="text-slate-600 text-sm font-medium mb-1">Total Transactions (Nonce)</div>
+                                <div className="text-2xl font-bold text-slate-800">{hexToInt(addressData?.count)}</div>
+                            </div>
+                            </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-6 mb-6">
+                            <div className="bg-slate-100 rounded-xl p-4 border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3 text-slate-700 font-semibold text-sm uppercase"><IconClock size={16} /> Date Scanner</div>
+                                    <form onSubmit={handleDateScan} className="space-y-3">
+                                        <input type="datetime-local" className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm" value={dateStart} onChange={(e) => setDateStart(e.target.value)} required />
+                                        <input type="datetime-local" className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} required />
+                                        <button type="submit" disabled={isLocating || scanning} className="w-full px-6 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50 flex items-center justify-center gap-2 h-[38px] mt-2">
+                                            {isLocating ? <IconRefreshCw size={14} className="animate-spin" /> : <IconSearch size={14} />} {isLocating ? 'Locating...' : 'Scan Date Range'}
+                                        </button>
+                                    </form>
+                                </div>
+                                {isLocating && <div className="mt-2 text-xs text-indigo-600 font-mono animate-pulse">Binary searching... {scanProgress}</div>}
+                            </div>
+
+                            <div className="bg-slate-100 rounded-xl p-4 border border-slate-200 flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3 text-slate-700 font-semibold text-sm uppercase"><IconBox size={16} /> Block Range Scanner</div>
+                                    <form onSubmit={handleBlockScan} className="space-y-3">
+                                        <input type="number" placeholder="Start Block" className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm" value={blockStartInput} onChange={(e) => setBlockStartInput(e.target.value)} required />
+                                        <input type="number" placeholder="End Block" className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm" value={blockEndInput} onChange={(e) => setBlockEndInput(e.target.value)} required />
+                                        <button type="submit" disabled={scanning} className="w-full px-6 py-2 bg-indigo-700 text-white rounded-md text-sm font-medium hover:bg-indigo-600 disabled:opacity-50 flex items-center justify-center gap-2 h-[38px] mt-2">
+                                            {scanning && !isLocating ? <IconRefreshCw size={14} className="animate-spin" /> : <IconBox size={14} />} {scanning && !isLocating ? 'Scanning...' : 'Scan Block Range'}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="flex items-center gap-2"><h3 className="font-bold text-slate-700">Latest Activity</h3>{scanning && scanProgress && !isLocating && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-mono">{scanProgress}</span>}</div>
+                            <div className="text-xs text-slate-400">{scanning ? <span className="flex items-center gap-2 text-indigo-600"><IconRefreshCw size={12} className="animate-spin"/> Processing...</span> : <span>Scanned up to {oldestScannedBlock}</span>}</div>
+                            </div>
+                            {addressTxs.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm text-slate-600">
+                                <thead className="bg-slate-50 text-xs uppercase font-medium text-slate-500 border-b border-slate-100"><tr><th className="px-6 py-3">Tx Hash</th><th className="px-6 py-3">Block</th><th className="px-6 py-3">Age</th><th className="px-6 py-3">From</th><th className="px-6 py-3">To</th><th className="px-6 py-3">Value</th></tr></thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {addressTxs.map((tx) => (
+                                    <tr key={tx.hash} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-6 py-4"><button onClick={() => goToTx(tx.hash)} className="text-indigo-600 hover:text-indigo-800 font-mono flex items-center gap-1"><IconFileText size={14}/> {tx.hash.substring(0, 10)}...</button></td>
+                                        <td className="px-6 py-4 font-mono text-slate-500">{hexToInt(tx.blockNumber)}</td>
+                                        <td className="px-6 py-4 text-slate-500 cursor-help" title={formatLocalTime(tx.timestamp)}>{timeAgo(tx.timestamp)}</td>
+                                        <td className="px-6 py-4 font-mono">{tx.from?.toLowerCase() === addressData?.address?.toLowerCase() ? <span className="bg-slate-100 px-2 py-1 rounded text-xs">Self</span> : <span className="text-indigo-600 truncate w-24 block" title={tx.from}>{tx.from.substring(0, 8)}...</span>}</td>
+                                        <td className="px-6 py-4 font-mono">{tx.to?.toLowerCase() === addressData?.address?.toLowerCase() ? <span className="bg-green-100 text-green-700 text-[10px] px-1 rounded font-bold uppercase">IN</span> : <span className="text-indigo-600 truncate w-24 block" title={tx.to}>{tx.to ? tx.to.substring(0, 8) + '...' : 'Contract'}</span>}</td>
+                                        <td className="px-6 py-4 font-medium">{formatWei(tx.value)} {CURRENCY_SYMBOL}</td>
+                                    </tr>
+                                    ))}
+                                </tbody>
+                                </table>
+                            </div>
+                            ) : <div className="p-12 text-center text-slate-400">{scanning ? <p className="flex justify-center items-center gap-2"><IconRefreshCw className="animate-spin" /> Batch scanning...</p> : <p>No transactions found in range.</p>}</div>}
+                            
+                            <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-center">
+                                <button onClick={handleScanMore} disabled={scanning || isLocating} className="flex items-center gap-2 px-6 py-2 bg-white border border-slate-300 shadow-sm rounded-full text-slate-600 hover:text-indigo-600 font-medium text-sm group">
+                                    {scanning && !isLocating ? <IconRefreshCw size={16} className="animate-spin" /> : <IconBox size={16} />} Deep Scan 1,000 More
+                                </button>
+                            </div>
+                        </div>
+                        </div>
+                    )}
+
+                    {view === 'transaction' && txData && (
+                        <div className="max-w-7xl mx-auto">
+                        <button onClick={() => setView('home')} className="mb-6 flex items-center gap-2 text-slate-500 hover:text-indigo-600 transition-colors"><IconArrowLeft size={16} /> Back to Search</button>
+                        <div className="mb-6 flex items-center gap-2"><h3 className="text-xl font-bold text-slate-800">Transaction Details</h3></div>
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="flex border-b border-slate-100">
+                            <button onClick={() => setTxTab('overview')} className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${txTab === 'overview' ? 'text-indigo-600 border-indigo-600' : 'text-slate-500 border-transparent'}`}>Overview</button>
+                            <button onClick={() => setTxTab('logs')} className={`px-6 py-4 font-medium text-sm border-b-2 transition-colors ${txTab === 'logs' ? 'text-indigo-600 border-indigo-600' : 'text-slate-500 border-transparent'}`}>Logs ({receiptData?.logs?.length || 0})</button>
+                            </div>
+
+                            {txTab === 'overview' ? (
+                            <div className="p-6 md:p-8 space-y-6">
+                                <div className="grid md:grid-cols-12 gap-4 items-start"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconFileText size={16} /> Transaction Hash:</div><div className="md:col-span-9 break-all font-mono text-slate-700 flex items-center gap-2">{txData.hash} <button onClick={() => copyToClipboard(txData.hash, 'hash')}><IconCopy size={16} /></button> {isCopied === 'hash' && <span className="text-green-600 text-xs">Copied</span>}</div></div>
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconCheck size={16} /> Status:</div><div className="md:col-span-9">{receiptData?.status === '0x1' ? <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Success</span> : <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Failed</span>}</div></div>
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconBox size={16} /> Block:</div><div className="md:col-span-9 text-indigo-600 font-medium">{hexToInt(txData.blockNumber)}</div></div>
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconClock size={16} /> Timestamp:</div><div className="md:col-span-9">{blockData ? <span>{timeAgo(blockData.timestamp)} ({formatLocalTime(blockData.timestamp)})</span> : '...'}</div></div>
+                                <hr className="border-slate-100" />
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">From:</div><div className="md:col-span-9 font-mono text-indigo-600 break-all">{txData.from}</div></div>
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">To:</div><div className="md:col-span-9 font-mono text-indigo-600 break-all">{txData.to || 'Contract Creation'}</div></div>
+                                <hr className="border-slate-100" />
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">Value:</div><div className="md:col-span-9"><span className="bg-slate-100 px-2 py-1 rounded text-sm font-mono">{formatWei(txData.value)} {CURRENCY_SYMBOL}</span></div></div>
+                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">Gas Price:</div><div className="md:col-span-9 text-sm text-slate-600">{formatGasPrice(txData.gasPrice)} Gwei</div></div>
+                            </div>
+                            ) : (
+                            <div className="p-6 md:p-8 space-y-6">
+                                {receiptData?.logs?.map((log, index) => (
+                                    <div key={index} className="flex gap-4 p-4 border rounded-lg border-slate-100">
+                                        <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-xs border border-green-200 flex-shrink-0">{parseInt(log.logIndex, 16)}</div>
+                                        <div className="flex-grow overflow-hidden">
+                                            <div className="flex flex-col md:flex-row gap-2 mb-2"><span className="font-bold text-sm">Address</span><span className="font-mono text-indigo-600 text-sm break-all">{log.address}</span></div>
+                                            <div className="bg-slate-50 p-3 rounded-md border border-slate-200 mb-2">
+                                                <div className="text-xs font-bold text-slate-500 mb-2 uppercase">Topics</div>
+                                                {log.topics.map((t, i) => <div key={i} className="flex gap-2 mb-1 text-xs font-mono text-slate-600 break-all"><span className="bg-slate-200 px-1 rounded">{i}</span> {t}</div>)}
+                                            </div>
+                                            <div className="bg-slate-50 p-3 rounded-md border border-slate-200">
+                                                <div className="text-xs font-bold text-slate-500 mb-2 uppercase">Data</div>
+                                                <div className="font-mono text-xs text-slate-600 break-all bg-white p-2 rounded border border-slate-100 max-h-32 overflow-y-auto">{log.data}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(!receiptData?.logs || receiptData.logs.length === 0) && <div className="text-center text-slate-400">No logs found.</div>}
+                            </div>
+                            )}
+                        </div>
+                        </div>
+                    )}
+
+                    {modalConfig && (
+                        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+                                <h3 className="text-lg font-bold text-slate-800 mb-2">High Volume Scan</h3>
+                                <p className="text-slate-600 text-sm mb-6">{modalConfig.message}</p>
+                                <div className="flex justify-end gap-3">
+                                    <button onClick={modalConfig.onCancel} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm">Cancel</button>
+                                    <button onClick={modalConfig.onConfirm} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm">Continue</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
         }
-      }
-      
-      // Handle custom errors if possible (this is a simplified example)
-      // A more robust solution would involve fetching the contract ABI
-      return `Unknown error format. Raw data: ${data}`;
-    }
-  </script>
+
+        // --- Render Application ---
+        const App = () => (
+            <ErrorBoundary>
+                <SonicExplorer />
+            </ErrorBoundary>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
