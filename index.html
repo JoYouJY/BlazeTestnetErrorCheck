@@ -477,6 +477,37 @@
                 } catch(e) { return '0'; }
             };
 
+            const formatGasPriceInS = (hexWei) => {
+                if (!hexWei) return '0';
+                if (typeof BigInt === 'undefined') return '0';
+                try {
+                    const bigIntWei = BigInt(hexWei);
+                    const divisor = BigInt("1000000000000000000");
+                    const integerPart = bigIntWei / divisor;
+                    const remainder = bigIntWei % divisor;
+                    let decimalPart = remainder.toString().padStart(18, '0').slice(0, 9);
+                    return `${integerPart}.${decimalPart}`;
+                } catch(e) { return '0'; }
+            };
+
+            const formatNumberWithCommas = (num) => {
+                if (num === null || num === undefined) return '0';
+                return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            };
+
+            const formatInputData = (input) => {
+                if (!input || input === '0x' || input === '0x0') return null;
+                return input;
+            };
+
+            // USD price placeholder (no live price feed - shows $0.00 as per example)
+            const formatUSDValue = (sAmount) => {
+                const parsed = parseFloat(sAmount);
+                if (isNaN(parsed) || parsed === 0) return '$0.00';
+                // Approximate: in real usage you'd fetch S price; placeholder shows minimal value
+                return `$${(parsed * 0.042).toFixed(6)}`;
+            };
+
             const hexToInt = (hex) => hex ? parseInt(hex, 16) : 0;
 
             const copyToClipboard = (text, label) => {
@@ -708,17 +739,149 @@
                             </div>
 
                             {txTab === 'overview' ? (
-                            <div className="p-6 md:p-8 space-y-6">
-                                <div className="grid md:grid-cols-12 gap-4 items-start"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconFileText size={16} /> Transaction Hash:</div><div className="md:col-span-9 break-all font-mono text-slate-700 flex items-center gap-2">{txData.hash} <button onClick={() => copyToClipboard(txData.hash, 'hash')}><IconCopy size={16} /></button> {isCopied === 'hash' && <span className="text-green-600 text-xs">Copied</span>}</div></div>
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconCheck size={16} /> Status:</div><div className="md:col-span-9">{receiptData?.status === '0x1' ? <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">Success</span> : <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">Failed</span>}</div></div>
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconBox size={16} /> Block:</div><div className="md:col-span-9 text-indigo-600 font-medium">{hexToInt(txData.blockNumber)}</div></div>
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconClock size={16} /> Timestamp:</div><div className="md:col-span-9">{blockData ? <span>{timeAgo(blockData.timestamp)} ({formatLocalTime(blockData.timestamp)})</span> : '...'}</div></div>
+                            <div className="p-6 md:p-8 space-y-5">
+                                {/* Transaction Hash */}
+                                <div className="grid md:grid-cols-12 gap-4 items-start">
+                                    <div className="md:col-span-3 text-slate-500 flex items-center gap-2 pt-1"><IconFileText size={16} /> Transaction Hash:</div>
+                                    <div className="md:col-span-9 break-all font-mono text-slate-700 flex items-center gap-2">{txData.hash} <button onClick={() => copyToClipboard(txData.hash, 'hash')} className="text-slate-400 hover:text-indigo-600"><IconCopy size={14} /></button> {isCopied === 'hash' && <span className="text-green-600 text-xs">Copied!</span>}</div>
+                                </div>
+
+                                {/* Status */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconCheck size={16} /> Status:</div>
+                                    <div className="md:col-span-9">{receiptData?.status === '0x1' ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200"><span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>Success</span> : receiptData ? <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200"><span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Failed</span> : <span className="text-slate-400 text-sm">Loading...</span>}</div>
+                                </div>
+
+                                {/* Block */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconBox size={16} /> Block:</div>
+                                    <div className="md:col-span-9 font-mono font-semibold text-indigo-600">{hexToInt(txData.blockNumber)}</div>
+                                </div>
+
+                                {/* Timestamp */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500 flex items-center gap-2"><IconClock size={16} /> Timestamp:</div>
+                                    <div className="md:col-span-9 text-slate-700">{blockData ? <span>{timeAgo(blockData.timestamp)}&nbsp;<span className="text-slate-400">({formatLocalTime(blockData.timestamp)})</span></span> : <span className="text-slate-400">Loading...</span>}</div>
+                                </div>
+
                                 <hr className="border-slate-100" />
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">From:</div><div className="md:col-span-9 font-mono text-indigo-600 break-all">{txData.from}</div></div>
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">To:</div><div className="md:col-span-9 font-mono text-indigo-600 break-all">{txData.to || 'Contract Creation'}</div></div>
+
+                                {/* From */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500">From:</div>
+                                    <div className="md:col-span-9 font-mono text-indigo-600 break-all flex items-center gap-2">{txData.from} <button onClick={() => copyToClipboard(txData.from, 'from')} className="text-slate-400 hover:text-indigo-600 flex-shrink-0"><IconCopy size={14} /></button>{isCopied === 'from' && <span className="text-green-600 text-xs">Copied!</span>}</div>
+                                </div>
+
+                                {/* To */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500">To:</div>
+                                    <div className="md:col-span-9 font-mono text-indigo-600 break-all flex items-center gap-2">{txData.to || <span className="text-orange-600 font-medium">[Contract Creation]</span>}{txData.to && <button onClick={() => copyToClipboard(txData.to, 'to')} className="text-slate-400 hover:text-indigo-600 flex-shrink-0"><IconCopy size={14} /></button>}{isCopied === 'to' && <span className="text-green-600 text-xs">Copied!</span>}</div>
+                                </div>
+
                                 <hr className="border-slate-100" />
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">Value:</div><div className="md:col-span-9"><span className="bg-slate-100 px-2 py-1 rounded text-sm font-mono">{formatWei(txData.value)} {CURRENCY_SYMBOL}</span></div></div>
-                                <div className="grid md:grid-cols-12 gap-4 items-center"><div className="md:col-span-3 text-slate-500">Gas Price:</div><div className="md:col-span-9 text-sm text-slate-600">{formatGasPrice(txData.gasPrice)} Gwei</div></div>
+
+                                {/* Value */}
+                                <div className="grid md:grid-cols-12 gap-4 items-start">
+                                    <div className="md:col-span-3 text-slate-500 pt-1">Value:</div>
+                                    <div className="md:col-span-9">
+                                        <div className="inline-flex flex-col">
+                                            <span className="bg-slate-100 border border-slate-200 px-2.5 py-1 rounded text-sm font-mono text-slate-800">{formatWei(txData.value)} {CURRENCY_SYMBOL}</span>
+                                            <span className="text-xs text-slate-400 mt-1 ml-1">({formatUSDValue(formatWei(txData.value))})</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Transaction Fee */}
+                                <div className="grid md:grid-cols-12 gap-4 items-start">
+                                    <div className="md:col-span-3 text-slate-500 pt-1">Transaction Fee:</div>
+                                    <div className="md:col-span-9">
+                                        <div className="inline-flex flex-col">
+                                            <span className="font-mono text-sm text-slate-800">{calculateFee(receiptData?.gasUsed, txData.gasPrice)} {CURRENCY_SYMBOL}</span>
+                                            <span className="text-xs text-slate-400 mt-1">({formatUSDValue(calculateFee(receiptData?.gasUsed, txData.gasPrice))})</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Gas Price */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500">Gas Price:</div>
+                                    <div className="md:col-span-9 text-sm text-slate-700">
+                                        <span className="font-mono">{formatGasPrice(txData.gasPrice)} Gwei</span>
+                                        <span className="text-slate-400 ml-2">({formatGasPriceInS(txData.gasPrice)} {CURRENCY_SYMBOL})</span>
+                                    </div>
+                                </div>
+
+                                {/* Gas Limit & Usage */}
+                                <div className="grid md:grid-cols-12 gap-4 items-center">
+                                    <div className="md:col-span-3 text-slate-500">Gas Limit &amp; Usage by Txn:</div>
+                                    <div className="md:col-span-9 text-sm text-slate-700">
+                                        {(() => {
+                                            const limit = hexToInt(txData.gas);
+                                            const used = hexToInt(receiptData?.gasUsed);
+                                            const pct = limit > 0 ? ((used / limit) * 100).toFixed(2) : '0.00';
+                                            return (
+                                                <span className="font-mono">
+                                                    {formatNumberWithCommas(limit)}
+                                                    {receiptData && <span> | <span className="text-slate-500">{formatNumberWithCommas(used)}</span> <span className="text-slate-400 text-xs">({pct}%)</span></span>}
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
+
+                                {/* Gas Fees */}
+                                <div className="grid md:grid-cols-12 gap-4 items-start">
+                                    <div className="md:col-span-3 text-slate-500 pt-1">Gas Fees:</div>
+                                    <div className="md:col-span-9">
+                                        <div className="flex flex-wrap gap-2 text-sm">
+                                            <span className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs font-mono">
+                                                <span className="text-slate-500 font-semibold">Base: </span>
+                                                <span className="text-slate-700">{formatGasPrice(blockData?.baseFeePerGas || txData.gasPrice)} Gwei</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <hr className="border-slate-100" />
+
+                                {/* Other Attributes */}
+                                <div className="grid md:grid-cols-12 gap-4 items-start">
+                                    <div className="md:col-span-3 text-slate-500 pt-1">Other Attributes:</div>
+                                    <div className="md:col-span-9">
+                                        <div className="flex flex-wrap gap-2">
+                                            <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-1 text-xs font-mono">
+                                                <span className="text-slate-500 font-semibold">Txn Type: </span>
+                                                <span className="text-slate-700">{txData.type ? `${hexToInt(txData.type)} (${hexToInt(txData.type) === 2 ? 'EIP-1559' : hexToInt(txData.type) === 1 ? 'Access List' : 'Legacy'})` : '0 (Legacy)'}</span>
+                                            </span>
+                                            <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-1 text-xs font-mono">
+                                                <span className="text-slate-500 font-semibold">Nonce: </span>
+                                                <span className="text-slate-700">{hexToInt(txData.nonce)}</span>
+                                            </span>
+                                            <span className="bg-slate-100 border border-slate-200 rounded px-2.5 py-1 text-xs font-mono">
+                                                <span className="text-slate-500 font-semibold">Position In Block: </span>
+                                                <span className="text-slate-700">{txData.transactionIndex !== undefined ? hexToInt(txData.transactionIndex) : '—'}</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Input Data */}
+                                <div className="grid md:grid-cols-12 gap-4 items-start">
+                                    <div className="md:col-span-3 text-slate-500 pt-1">Input Data:</div>
+                                    <div className="md:col-span-9">
+                                        {formatInputData(txData.input) ? (
+                                            <div className="rounded-lg border border-slate-200 overflow-hidden">
+                                                <div className="bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center justify-between">
+                                                    <span className="text-xs font-semibold text-slate-500 uppercase">Hex (Default)</span>
+                                                    <button onClick={() => copyToClipboard(txData.input, 'inputdata')} className="text-xs text-slate-400 hover:text-indigo-600 flex items-center gap-1"><IconCopy size={12} /> {isCopied === 'inputdata' ? 'Copied!' : 'Copy'}</button>
+                                                </div>
+                                                <div className="font-mono text-xs text-slate-600 p-3 bg-white break-all max-h-48 overflow-y-auto border-none">{txData.input}</div>
+                                            </div>
+                                        ) : (
+                                            <span className="text-slate-400 text-sm italic">Empty (No input data)</span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                             ) : (
                             <div className="p-6 md:p-8 space-y-6">
