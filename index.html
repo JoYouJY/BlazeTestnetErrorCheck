@@ -147,6 +147,36 @@
             const [modalConfig, setModalConfig] = useState(null); 
             const [isCopied, setIsCopied] = useState('');
 
+            // --- URL Parsing on Load ---
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const query = params.get('q');
+                if (query) {
+                    setSearchInput(query);
+                    triggerSearch(query);
+                }
+            }, []);
+
+            const triggerSearch = async (input) => {
+                const searchStr = input.trim();
+                setError(null);
+                setLoading(true);
+
+                try {
+                    if (searchStr.length === 66 && searchStr.startsWith('0x')) {
+                        await fetchTransaction(searchStr);
+                    } else if (searchStr.length === 42 && searchStr.startsWith('0x')) {
+                        await fetchAddress(searchStr);
+                    } else {
+                        setError("Invalid input. Please enter a valid Tx Hash (66 chars) or Address (42 chars).");
+                        setLoading(false);
+                    }
+                } catch (err) {
+                    setError(err.message || "An error occurred");
+                    setLoading(false);
+                }
+            };
+
             // --- RPC Helper (Single) ---
             const rpcCall = async (method, params) => {
                 try {
@@ -199,24 +229,7 @@
             const handleSearch = async (e) => {
                 if (e) e.preventDefault();
                 if (!searchInput) return;
-
-                const input = searchInput.trim();
-                setError(null);
-                setLoading(true);
-
-                try {
-                    if (input.length === 66 && input.startsWith('0x')) {
-                        await fetchTransaction(input);
-                    } else if (input.length === 42 && input.startsWith('0x')) {
-                        await fetchAddress(input);
-                    } else {
-                        setError("Invalid input. Please enter a valid Tx Hash (66 chars) or Address (42 chars).");
-                        setLoading(false);
-                    }
-                } catch (err) {
-                    setError(err.message || "An error occurred");
-                    setLoading(false);
-                }
+                triggerSearch(searchInput);
             };
 
              const fetchTransaction = async (hash) => {
@@ -742,11 +755,41 @@
                                 <tbody className="divide-y divide-slate-100">
                                     {addressTxs.map((tx) => (
                                     <tr key={tx.hash} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-6 py-4"><button onClick={() => goToTx(tx.hash)} className="text-indigo-600 hover:text-indigo-800 font-mono flex items-center gap-1"><IconFileText size={14}/> {tx.hash.substring(0, 10)}...</button></td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <a href={`?q=${tx.hash}`} target="_blank" className="text-indigo-600 hover:text-indigo-800 font-mono flex items-center gap-1"><IconFileText size={14}/> {tx.hash.substring(0, 10)}...</a>
+                                                <button onClick={() => copyToClipboard(tx.hash, `tx-${tx.hash}`)} className="text-slate-400 hover:text-indigo-600"><IconCopy size={12} /></button>
+                                                {isCopied === `tx-${tx.hash}` && <span className="text-[10px] text-green-600 font-medium">Copied!</span>}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4 font-mono text-slate-500">{hexToInt(tx.blockNumber)}</td>
                                         <td className="px-6 py-4 text-slate-500 cursor-help" title={formatLocalTime(tx.timestamp)}>{timeAgo(tx.timestamp)}</td>
-                                        <td className="px-6 py-4 font-mono">{tx.from?.toLowerCase() === addressData?.address?.toLowerCase() ? <span className="bg-slate-100 px-2 py-1 rounded text-xs">Self</span> : <span className="text-indigo-600 truncate w-24 block" title={tx.from}>{tx.from.substring(0, 8)}...</span>}</td>
-                                        <td className="px-6 py-4 font-mono">{tx.to?.toLowerCase() === addressData?.address?.toLowerCase() ? <span className="bg-green-100 text-green-700 text-[10px] px-1 rounded font-bold uppercase">IN</span> : <span className="text-indigo-600 truncate w-24 block" title={tx.to}>{tx.to ? tx.to.substring(0, 8) + '...' : 'Contract'}</span>}</td>
+                                        <td className="px-6 py-4 font-mono">
+                                            {tx.from?.toLowerCase() === addressData?.address?.toLowerCase() ? (
+                                                <span className="bg-slate-100 px-2 py-1 rounded text-xs">Self</span>
+                                            ) : (
+                                                <div className="flex items-center gap-1.5">
+                                                    <a href={`?q=${tx.from}`} target="_blank" className="text-indigo-600 truncate w-24 block hover:underline" title={tx.from}>{tx.from.substring(0, 8)}...</a>
+                                                    <button onClick={() => copyToClipboard(tx.from, `from-${tx.hash}`)} className="text-slate-400 hover:text-indigo-600 flex-shrink-0"><IconCopy size={12} /></button>
+                                                    {isCopied === `from-${tx.hash}` && <span className="text-[10px] text-green-600 absolute ml-28">Copied!</span>}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 font-mono relative">
+                                            {tx.to?.toLowerCase() === addressData?.address?.toLowerCase() ? (
+                                                <span className="bg-green-100 text-green-700 text-[10px] px-1 rounded font-bold uppercase">IN</span>
+                                            ) : (
+                                                <div className="flex items-center gap-1.5">
+                                                    {tx.to ? (
+                                                        <a href={`?q=${tx.to}`} target="_blank" className="text-indigo-600 truncate w-24 block hover:underline" title={tx.to}>{tx.to.substring(0, 8)}...</a>
+                                                    ) : (
+                                                        <span className="text-slate-500 italic truncate w-24 block">Contract</span>
+                                                    )}
+                                                    {tx.to && <button onClick={() => copyToClipboard(tx.to, `to-${tx.hash}`)} className="text-slate-400 hover:text-indigo-600 flex-shrink-0"><IconCopy size={12} /></button>}
+                                                    {isCopied === `to-${tx.hash}` && <span className="text-[10px] text-green-600 absolute ml-28">Copied!</span>}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 font-medium">{formatWei(tx.value)} {CURRENCY_SYMBOL}</td>
                                     </tr>
                                     ))}
